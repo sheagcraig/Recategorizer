@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 """Recategorizer.py
 
-Bulk edit policy categories.
+Reassign categories to all policies and packages, then offer to remove
+unused categories.
 
-Copyright (C) 2014 Shea G Craig <shea.craig@da.org>
+Copyright (C) 2015 Shea G Craig <shea.craig@da.org>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -25,6 +26,7 @@ import os.path
 import pprint
 import readline
 import subprocess
+import sys
 
 from Foundation import (NSData,
                         NSPropertyListSerialization,
@@ -178,22 +180,23 @@ class Submenu(object):
 
         print("\nHit enter to accept default choice, or enter a number.")
         print("Create a new category by entering a new name.")
-        print("\nPlease choose a category for policy: %s" % self.name)
+        print("\nPlease choose a category for: %s" % self.name)
         choice = raw_input("Choose and perish: (DEFAULT \'%s\') " %
                         self.default)
 
         if choice.isdigit() and in_range(int(choice), len(option_list)):
-            result = self.options[int(choice)]
+            result = {self.name: self.options[int(choice)]}
         elif choice == '':
-            result = self.default
+            result = {}
         elif choice.isdigit() and not in_range(int(choice),
                                                 len(option_list)):
             raise ChoiceError("Invalid Choice")
         else:
             # User provided a new object value.
-            result = choice
+            result = {self.name: choice}
 
-        return {self.name: result}
+        #return {self.name: result}
+        return result
 
 
 def configure_jss(env):
@@ -210,7 +213,7 @@ def configure_jss(env):
     return j
 
 
-def build_menu(j):
+def build_policy_menu(j):
     """Construct the menu for prompting users to create a JSS recipe."""
     menu = Menu()
 
@@ -221,6 +224,21 @@ def build_menu(j):
     for policy in policies:
         menu.add_submenu(Submenu(policy.name, categories,
                                  policy.findtext('general/category/name')))
+
+    return menu
+
+
+def build_package_menu(j):
+    """Construct the menu for prompting users to create a JSS recipe."""
+    menu = Menu()
+
+    # Categories
+    categories = [cat.name for cat in j.Category()]
+
+    packages = j.Package().retrieve_all()
+    for package in packages:
+        menu.add_submenu(Submenu(package.name, categories,
+                                 package.findtext('category')))
 
     return menu
 
@@ -243,6 +261,57 @@ def cls():
     subprocess.call(['clear'])
 
 
+def confirm(results):
+    """Offer user a chance to bail prior to committing changes."""
+    cls()
+    pprint.pprint(results)
+    while True:
+        choice = raw_input("Last chance: Are you sure you want to commit these "
+                           "changes? (Y|N) ")
+        if choice.upper() == 'Y':
+            response = True
+            break
+        elif choice.upper() == 'N':
+            response = False
+            break
+        else:
+            next
+
+    return response
+
+
+def ensure_categories(j, categories):
+    """Given a list of categories, ensure that they all exist on the
+    JSS.
+
+    """
+    print("Ensuring categories exist...")
+    category_set = set(categories)
+    for category in category_set:
+        try:
+            j.Category(category)
+            print("Category %s exists..." % category)
+        except jss.exceptions.JSSGetError:
+            jss.Category(j, category).save()
+            print("Category %s created." % category)
+
+
+def get_unused_categories(j):
+    """Return a set of empty categories."""
+    policy_categories = {policy.findtext('general/category/name')for policy in
+                         j.Policy().retrieve_all()}
+    package_categories = {package.findtext('category') for package in
+                          j.Package().retrieve_all()}
+    all_categories = {cat.name for cat in j.Category().retrieve_all()}
+
+    used_categories = policy_categories.union(package_categories)
+    unused_categories = all_categories.difference(used_categories)
+    # Remove the reserved category types:
+    unused_categories.difference_update({'Unknown', 'No category assigned'})
+
+    return unused_categories
+
+
 def main():
     """Commandline processing."""
     # Handle command line arguments
@@ -253,17 +322,70 @@ def main():
     autopkg_env = Plist(AUTOPKG_PREFERENCES)
     j = configure_jss(autopkg_env)
 
-    # Build our interactive menu
-    menu = build_menu(j)
-    menu.submenus = menu.submenus[0:5]
+    print("\nRecategorizer will first ask you to assign categories to all "
+          "policies. You will be offered a chance to bail prior to committing "
+          "changes.\nNext, you will be asked to assign categories to all "
+          "packages. Again, you may bail prior to committing changes.\n"
+          "Finally, a list of unused categories will be generated, and you "
+          "will be prompted individually to keep or delete them.\n\n")
+    response = raw_input("Hit enter to continue. ")
+    print("Building data...")
 
-    # Run the questions past the user.
-    menu.run()
-    for name, category in menu.results.items():
-        print(name, category)
-        policy = j.Policy(name)
-        policy.set_category(j.Category(category))
-        policy.save()
+    # Build our interactive policy menu
+    policy_menu = build_policy_menu(j)
+    #policy_menu.submenus = policy_menu.submenus[0:5]
+
+    # Run the policy questions past the user.
+    policy_menu.run()
+
+    if policy_menu.results:
+        # Give them a chance to bail.
+        response = confirm(policy_menu.results)
+
+        # Save changes to policies.
+        if response:
+            ensure_categories(j, policy_menu.results.values())
+            for name, category in policy_menu.results.items():
+                print("Updating policy: %s to category %s" % (name, category))
+                policy = j.Policy(name)
+                policy.set_category(j.Category(category))
+                policy.save()
+        else:
+            sys.exit()
+
+    # Pause before continuing so user can see what just happened.
+    ready = raw_input("Ready to continue onto packages? (Hit any enter) ")
+
+    # Build our interactive package menu
+    package_menu = build_package_menu(j)
+    #package_menu.submenus = package_menu.submenus[0:5]
+
+    # Run the package questions past the user.
+    package_menu.run()
+
+    if package_menu.results:
+        # Give them a chance to bail.
+        response = confirm(package_menu.results)
+
+        # Save changes to policies.
+        if response:
+            ensure_categories(j, package_menu.results.values())
+            for name, category in package_menu.results.items():
+                print("Updating package: %s to category %s" % (name, category))
+                package = j.Package(name)
+                package.set_category(j.Category(category))
+                package.save()
+        else:
+            sys.exit()
+
+    # Offer to delete unused categories:
+    unused_categories = get_unused_categories(j)
+    for category in unused_categories:
+        response = raw_input("Category: %s is not in use. Would you like to "
+                             "delete it? (Y|N) " % category)
+
+        if response.upper() == 'Y':
+            j.Category(category).delete()
 
 
 if __name__ == '__main__':
