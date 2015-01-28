@@ -40,7 +40,8 @@ import jss
 # Globals
 # Edit these if you want to change their default values.
 AUTOPKG_PREFERENCES = '~/Library/Preferences/com.github.autopkg.plist'
-PYTHON_JSS_PREFERENCES = '~/Library/Preferences/com.github.sheagcraig.python-jss.plist'
+PYTHON_JSS_PREFERENCES = \
+    '~/Library/Preferences/com.github.sheagcraig.python-jss.plist'
 DESCRIPTION = ("Recategorizer will first ask you to assign categories to all "
                "policies. You will be offered a chance to bail prior to "
                "committing changes.\nNext, you will be asked to assign "
