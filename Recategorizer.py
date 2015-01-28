@@ -21,6 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 """
 
+
 import argparse
 import os.path
 import pprint
@@ -39,8 +40,17 @@ import jss
 # Globals
 # Edit these if you want to change their default values.
 AUTOPKG_PREFERENCES = '~/Library/Preferences/com.github.autopkg.plist'
+DESCRIPTION = ("Recategorizer will first ask you to assign categories to all "
+               "policies. You will be offered a chance to bail prior to "
+               "committing changes.\nNext, you will be asked to assign "
+               "categories to all packages.  Again, you may bail prior to "
+               "committing changes.\nFinally, a list of unused categories "
+               "will be generated, and you will be prompted individually to "
+               "keep or delete them.")
+
 
 __version__ = '0.1.0'
+
 
 class ChoiceError(Exception):
     """An invalid choice was made."""
@@ -195,7 +205,6 @@ class Submenu(object):
             # User provided a new object value.
             result = {self.name: choice}
 
-        #return {self.name: result}
         return result
 
 
@@ -246,7 +255,7 @@ def build_package_menu(j):
 def build_argparser():
     """Create our argument parser."""
     parser = argparse.ArgumentParser(description="Bulk edit policy "
-                                     "categories.")
+                                     "categories. %s" % DESCRIPTION)
 
     return parser
 
@@ -266,8 +275,8 @@ def confirm(results):
     cls()
     pprint.pprint(results)
     while True:
-        choice = raw_input("Last chance: Are you sure you want to commit these "
-                           "changes? (Y|N) ")
+        choice = raw_input("Last chance: Are you sure you want to commit these"
+                           " changes? (Y|N) ")
         if choice.upper() == 'Y':
             response = True
             break
@@ -298,6 +307,7 @@ def ensure_categories(j, categories):
 
 def get_unused_categories(j):
     """Return a set of empty categories."""
+    # Unused cats = {all_cats} - {policy_categories + package_categories}
     policy_categories = {policy.findtext('general/category/name')for policy in
                          j.Policy().retrieve_all()}
     package_categories = {package.findtext('category') for package in
@@ -314,7 +324,7 @@ def get_unused_categories(j):
 
 def main():
     """Commandline processing."""
-    # Handle command line arguments
+    # Handle command line arguments (None at this time).
     parser = build_argparser()
     args = parser.parse_args()
 
@@ -322,18 +332,12 @@ def main():
     autopkg_env = Plist(AUTOPKG_PREFERENCES)
     j = configure_jss(autopkg_env)
 
-    print("\nRecategorizer will first ask you to assign categories to all "
-          "policies. You will be offered a chance to bail prior to committing "
-          "changes.\nNext, you will be asked to assign categories to all "
-          "packages. Again, you may bail prior to committing changes.\n"
-          "Finally, a list of unused categories will be generated, and you "
-          "will be prompted individually to keep or delete them.\n\n")
+    print("\n%s\n\n" % DESCRIPTION)
     response = raw_input("Hit enter to continue. ")
     print("Building data...")
 
     # Build our interactive policy menu
     policy_menu = build_policy_menu(j)
-    #policy_menu.submenus = policy_menu.submenus[0:5]
 
     # Run the policy questions past the user.
     policy_menu.run()
@@ -358,7 +362,6 @@ def main():
 
     # Build our interactive package menu
     package_menu = build_package_menu(j)
-    #package_menu.submenus = package_menu.submenus[0:5]
 
     # Run the package questions past the user.
     package_menu.run()
