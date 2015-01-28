@@ -40,6 +40,7 @@ import jss
 # Globals
 # Edit these if you want to change their default values.
 AUTOPKG_PREFERENCES = '~/Library/Preferences/com.github.autopkg.plist'
+PYTHON_JSS_PREFERENCES = '~/Library/Preferences/com.github.sheagcraig.python-jss.plist'
 DESCRIPTION = ("Recategorizer will first ask you to assign categories to all "
                "policies. You will be offered a chance to bail prior to "
                "committing changes.\nNext, you will be asked to assign "
@@ -222,6 +223,18 @@ def configure_jss(env):
     return j
 
 
+def map_python_jss_env(env):
+    """Convert python-jss preferences to JSSImporter preferences."""
+    env['JSS_URL'] = env['jss_url']
+    env['API_USERNAME'] = env["jss_user"]
+    env['API_PASSWORD'] = env["jss_pass"]
+    env['JSS_VERIFY_SSL'] = env.get("ssl_verify", True)
+    env['JSS_SUPPRESS_WARNINGS'] = env.get("suppress_warnings", False)
+    env['JSS_REPOS'] = env.get("repos")
+
+    return env
+
+
 def build_policy_menu(j):
     """Construct the menu for prompting users to create a JSS recipe."""
     menu = Menu()
@@ -328,9 +341,16 @@ def main():
     parser = build_argparser()
     args = parser.parse_args()
 
-    # Get AutoPkg configuration settings for python-jss/JSSImporter.
-    autopkg_env = Plist(AUTOPKG_PREFERENCES)
-    j = configure_jss(autopkg_env)
+    # Get AutoPkg configuration settings for JSSImporter.
+    if os.path.exists(os.path.expanduser(AUTOPKG_PREFERENCES)):
+        autopkg_env = Plist(AUTOPKG_PREFERENCES)
+        j = configure_jss(autopkg_env)
+    elif os.path.exists(os.path.expanduser(PYTHON_JSS_PREFERENCES)):
+        python_jss_env = map_python_jss_env(Plist(PYTHON_JSS_PREFERENCES))
+        j = configure_jss(python_jss_env)
+    else:
+        raise jss.exceptions.JSSPrefsMissingFileError(
+            "No python-jss or AutoPKG/JSSImporter configuration file!")
 
     print("\n%s\n\n" % DESCRIPTION)
     response = raw_input("Hit enter to continue. ")
