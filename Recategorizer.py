@@ -137,18 +137,22 @@ class Menu(object):
     def __init__(self):
         self.submenus = []
         self.results = {}
+        self.new_cats = set()
 
     def run(self):
         """Run, in order, through our submenus, asking questions."""
         for submenu in self.submenus:
+            submenu.update_options(self.new_cats)
             while True:
                 try:
-                    result = submenu.ask()
+                    result, new_cat = submenu.ask()
                     break
                 except ChoiceError:
                     print("\n**Invalid entry! Try again.**")
                     continue
             self.results.update(result)
+            if new_cat:
+                self.new_cats.add(new_cat)
 
     def add_submenu(self, submenu):
         """Add a submenu to our questions list."""
@@ -195,6 +199,8 @@ class Submenu(object):
         choice = raw_input("Choose and perish: (DEFAULT \'%s\') " %
                         self.default)
 
+        new_cat = None
+
         if choice.isdigit() and in_range(int(choice), len(option_list)):
             result = {self.name: self.options[int(choice)]}
         elif choice == '':
@@ -205,8 +211,14 @@ class Submenu(object):
         else:
             # User provided a new object value.
             result = {self.name: choice}
+            new_cat = choice
 
-        return result
+        return (result, new_cat)
+
+    def update_options(self, new_options):
+        """Add new options to our menu after init time."""
+        options_set = set(self.options).union(new_options)
+        self.options = list(options_set)
 
 
 def configure_jss(env):
